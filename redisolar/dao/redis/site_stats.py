@@ -18,12 +18,14 @@ class SiteStatsNotFound(Exception):
 
 class SiteStatsDaoRedis(SiteStatsDaoBase, RedisDaoBase):
     """Persists and queries SiteStats in Redis."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.compare_and_update_script = CompareAndUpdateScript(self.redis)
 
-    def find_by_id(self, site_id: int, day: datetime.datetime = None,
-                   **kwargs) -> SiteStats:
+    def find_by_id(
+        self, site_id: int, day: datetime.datetime = None, **kwargs
+    ) -> SiteStats:
         if day is None:
             day = datetime.datetime.now()
 
@@ -53,8 +55,12 @@ class SiteStatsDaoRedis(SiteStatsDaoBase, RedisDaoBase):
         if not max_capacity or reading.current_capacity > float(max_capacity):
             self.redis.hset(key, SiteStats.MAX_CAPACITY, reading.wh_generated)
 
-    def _update_optimized(self, key: str, meter_reading: MeterReading,
-                          pipeline: redis.client.Pipeline = None) -> None:
+    def _update_optimized(
+        self,
+        key: str,
+        meter_reading: MeterReading,
+        pipeline: redis.client.Pipeline = None,
+    ) -> None:
         execute = False
         if pipeline is None:
             pipeline = self.redis.pipeline()
@@ -70,10 +76,24 @@ class SiteStatsDaoRedis(SiteStatsDaoBase, RedisDaoBase):
         # update expire time
         pipeline.expire(name=key, time=WEEK_SECONDS)
         # update site stats
-        script = CompareAndUpdateScript(self.redis)
-        script.update_if_greater(pipeline=pipeline, key=key, field=SiteStats.MAX_WH, value=meter_reading.wh_generated)
-        script.update_if_less(pipeline=pipeline, key=key, field=SiteStats.MIN_WH, value=meter_reading.wh_generated)
-        script.update_if_greater(pipeline=pipeline, key=key, field=SiteStats.MAX_CAPACITY, value=meter_reading.wh_generated)
+        self.compare_and_update_script.update_if_greater(
+            pipeline=pipeline,
+            key=key,
+            field=SiteStats.MAX_WH,
+            value=meter_reading.wh_generated,
+        )
+        self.compare_and_update_script.update_if_less(
+            pipeline=pipeline,
+            key=key,
+            field=SiteStats.MIN_WH,
+            value=meter_reading.wh_generated,
+        )
+        self.compare_and_update_script.update_if_greater(
+            pipeline=pipeline,
+            key=key,
+            field=SiteStats.MAX_CAPACITY,
+            value=meter_reading.wh_generated,
+        )
 
         # END Challenge #3
 
@@ -81,11 +101,12 @@ class SiteStatsDaoRedis(SiteStatsDaoBase, RedisDaoBase):
             pipeline.execute()
 
     def update(self, meter_reading: MeterReading, **kwargs) -> None:
-        key = self.key_schema.site_stats_key(meter_reading.site_id,
-                                             meter_reading.timestamp)
+        key = self.key_schema.site_stats_key(
+            meter_reading.site_id, meter_reading.timestamp
+        )
         # Remove for Challenge #3
         # self._update_basic(key, meter_reading)
 
         # Uncomment the following two lines for Challenge #3
-        pipeline = kwargs.get('pipeline')
+        pipeline = kwargs.get("pipeline")
         self._update_optimized(key, meter_reading, pipeline)
