@@ -61,6 +61,20 @@ class SiteStatsDaoRedis(SiteStatsDaoBase, RedisDaoBase):
             execute = True
 
         # START Challenge #3
+
+        reporting_time = datetime.datetime.utcnow().isoformat()
+        # update reporting time
+        pipeline.hset(name=key, key=SiteStats.LAST_REPORTING_TIME, value=reporting_time)
+        # increment meter_reading_count
+        pipeline.hincrby(name=key, key=SiteStats.COUNT, amount=1)
+        # update expire time
+        pipeline.expire(name=key, time=WEEK_SECONDS)
+        # update site stats
+        script = CompareAndUpdateScript(self.redis)
+        script.update_if_greater(pipeline=pipeline, key=key, field=SiteStats.MAX_WH, value=meter_reading.wh_generated)
+        script.update_if_less(pipeline=pipeline, key=key, field=SiteStats.MIN_WH, value=meter_reading.wh_generated)
+        script.update_if_greater(pipeline=pipeline, key=key, field=SiteStats.MAX_CAPACITY, value=meter_reading.wh_generated)
+
         # END Challenge #3
 
         if execute:
@@ -70,8 +84,8 @@ class SiteStatsDaoRedis(SiteStatsDaoBase, RedisDaoBase):
         key = self.key_schema.site_stats_key(meter_reading.site_id,
                                              meter_reading.timestamp)
         # Remove for Challenge #3
-        self._update_basic(key, meter_reading)
+        # self._update_basic(key, meter_reading)
 
         # Uncomment the following two lines for Challenge #3
-        # pipeline = kwargs.get('pipeline')
-        # self._update_optimized(key, meter_reading, pipeline)
+        pipeline = kwargs.get('pipeline')
+        self._update_optimized(key, meter_reading, pipeline)
