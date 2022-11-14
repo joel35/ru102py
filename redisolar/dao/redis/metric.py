@@ -121,8 +121,9 @@ class MetricDaoRedis(MetricDaoBase, RedisDaoBase):
 
         # START Challenge #2
 
-        element = f"{value}:{minute_of_day}"
+        element = str(MeasurementMinute(measurement=value, minute_of_day=minute_of_day))
         pipeline.zadd(name=metric_key, mapping={element: minute_of_day})
+        pipeline.expire(name=metric_key, time=METRIC_EXPIRATION_SECONDS)
 
         # END Challenge #2
 
