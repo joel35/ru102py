@@ -88,12 +88,11 @@ class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
             unit=query.radius_unit.value,
         )       
         
-        for site_id in site_ids:
-            p.zscore(capacity_ranking_key, site_id)
+        [p.zscore(capacity_ranking_key, site_id) for site_id in site_ids]
         
         score_list = p.execute()
 
-        scores = {id: score for id, score in zip(site_ids, score_list)}
+        scores = dict(zip(site_ids, score_list))
 
         for site_id in site_ids:
             if scores[site_id] and scores[site_id] > CAPACITY_THRESHOLD:
