@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 
 import redis
@@ -28,6 +29,22 @@ class FeedDaoRedis(FeedDaoBase, RedisDaoBase):
                 pipeline: redis.client.Pipeline) -> None:
         """Helper method to insert a meter reading."""
         # START Challenge #6
+
+        global_feed_key = self.key_schema.global_feed_key()
+        site_feed_key = self.key_schema.feed_key(meter_reading.site_id)
+
+        meter_reading_dict = dict(
+            site_id=meter_reading.site_id,
+            wh_used=meter_reading.wh_used,
+            wh_generated=meter_reading.wh_generated,
+            temp_c=meter_reading.temp_c,
+            timestamp=datetime.timestamp(meter_reading.timestamp)
+        )           
+
+        pipeline.xadd(name=global_feed_key, fields=meter_reading_dict, maxlen=self.GLOBAL_MAX_FEED_LENGTH)
+        pipeline.xadd(name=site_feed_key, fields=meter_reading_dict, maxlen=self.SITE_MAX_FEED_LENGTH)
+        pipeline.execute()
+
         # END Challenge #6
 
     def get_recent_global(self, limit: int, **kwargs) -> List[MeterReading]:
