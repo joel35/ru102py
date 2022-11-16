@@ -93,10 +93,7 @@ class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
         
         score_list = p.execute()
 
-        scores = {}
-
-        for i, id in enumerate(site_ids):
-            scores[id] = score_list[i]
+        scores = {id: score for id, score in zip(site_ids, score_list)}
 
         for site_id in site_ids:
             if scores[site_id] and scores[site_id] > CAPACITY_THRESHOLD:
