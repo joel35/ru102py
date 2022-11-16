@@ -93,7 +93,7 @@ class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
         p = self.redis.pipeline()
 
         [p.hgetall(key) for key in keys]
-        sites = set(FlatSiteSchema().load(site_hash) for site_hash in p.execute())
+        sites = set(FlatSiteSchema().load(site_hash) for site_hash in p.execute() if site_hash is not None)
 
         # return sites
         return sites
