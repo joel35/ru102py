@@ -14,18 +14,22 @@ CAPACITY_THRESHOLD = 0.2
 
 class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
     """SiteGeoDaoRedis persists and queries Sites in Redis."""
+
     def insert(self, site: Site, **kwargs):
         """Insert a Site into Redis."""
         hash_key = self.key_schema.site_hash_key(site.id)
-        client = kwargs.get('pipeline', self.redis)
+        client = kwargs.get("pipeline", self.redis)
         client.hset(hash_key, mapping=FlatSiteSchema().dump(site))  # type: ignore
 
         if not site.coordinate:
             raise ValueError("Site coordinates are required for Geo insert")
 
         client.geoadd(  # type: ignore
-            self.key_schema.site_geo_key(), site.coordinate.lng, site.coordinate.lat,
-            site.id)
+            self.key_schema.site_geo_key(),
+            site.coordinate.lng,
+            site.coordinate.lat,
+            site.id,
+        )
 
     def insert_many(self, *sites: Site, **kwargs) -> None:
         """Insert multiple Sites into Redis."""
@@ -44,8 +48,12 @@ class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
 
     def _find_by_geo(self, query: GeoQuery, **kwargs) -> Set[Site]:
         site_ids = self.redis.georadius(  # type: ignore
-            self.key_schema.site_geo_key(), query.coordinate.lng, query.coordinate.lat,
-            query.radius, query.radius_unit.value)
+            self.key_schema.site_geo_key(),
+            query.coordinate.lng,
+            query.coordinate.lat,
+            query.radius,
+            query.radius_unit.value,
+        )
         sites = [
             self.redis.hgetall(self.key_schema.site_hash_key(site_id))
             for site_id in site_ids
@@ -66,12 +74,29 @@ class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
         #
         # Make sure to run any Redis commands against a Pipeline object
         # for better performance.
-        # END Challenge #5
 
-        # Delete the next lines after you've populated a `site_ids`
-        # and `scores` variable.
-        site_ids: List[str] = []
-        scores: Dict[str, float] = {}
+        site_geo_key = self.key_schema.site_geo_key()
+        capacity_ranking_key = self.key_schema.capacity_ranking_key()
+
+        p = self.redis.pipeline(transaction=False)
+
+        site_ids = self.redis.georadius(
+            name=site_geo_key,
+            longitude=query.coordinate.lng,
+            latitude=query.coordinate.lat,
+            radius=query.radius,
+            unit=query.radius_unit.value,
+        )       
+        
+        for site_id in site_ids:
+            p.zscore(capacity_ranking_key, site_id)
+        
+        score_list = p.execute()
+
+        scores = {}
+
+        for i, id in enumerate(site_ids):
+            scores[id] = score_list[i]
 
         for site_id in site_ids:
             if scores[site_id] and scores[site_id] > CAPACITY_THRESHOLD:
@@ -90,10 +115,14 @@ class SiteGeoDaoRedis(SiteGeoDaoBase, RedisDaoBase):
         """Find all Sites."""
         site_ids = self.redis.zrange(self.key_schema.site_geo_key(), 0, -1)
         keys = (self.key_schema.site_hash_key(site_id) for site_id in site_ids)
-        p = self.redis.pipeline()
+        p = self.redis.pipeline(transaction=False)
 
         [p.hgetall(key) for key in keys]
-        sites = set(FlatSiteSchema().load(site_hash) for site_hash in p.execute() if site_hash is not None)
+        sites = set(
+            FlatSiteSchema().load(site_hash)
+            for site_hash in p.execute()
+            if site_hash is not None
+        )
 
         # return sites
         return sites
