@@ -1,6 +1,5 @@
 # Uncomment for Challenge #7
 import datetime
-import time
 import random
 from redis.client import Redis
 
@@ -21,7 +20,7 @@ class SlidingWindowRateLimiter(RateLimiterDaoBase, RedisDaoBase):
         max_hits: int,
         redis_client: Redis,
         key_schema: KeySchema = None,
-        **kwargs
+        **kwargs,
     ):
         self.window_size_ms = window_size_ms
         self.max_hits = max_hits
@@ -35,21 +34,17 @@ class SlidingWindowRateLimiter(RateLimiterDaoBase, RedisDaoBase):
             name=name, window_size_ms=self.window_size_ms, max_hits=self.max_hits
         )
 
-        timestamp = round(time.time() * 1000)
-        random_number = random.randint(0, 99999)
-
-        element_value = f"{timestamp}-{random_number}"
-
-        max_score = timestamp - self.window_size_ms
+        ts = datetime.datetime.utcnow().timestamp() * 1000
+        member = ts + random.random()
+        max_score = ts - self.window_size_ms
 
         p = self.redis.pipeline(transaction=True)
-        p.zadd(name=key, mapping={element_value: timestamp})
+        p.zadd(name=key, mapping={member: ts})
         p.zremrangebyscore(name=key, min=0, max=max_score)
         p.zcard(name=key)
-        _, _, remaining = p.execute()
+        _, _, hits = p.execute()
 
-        if remaining > self.max_hits:
-            raise RateLimitExceededException(f"Too many requests: {remaining} > {self.max_hits}")
-
+        if hits > self.max_hits:
+            raise RateLimitExceededException(f"Too many hits: {hits} > {self.max_hits}")
 
         # END Challenge #7
